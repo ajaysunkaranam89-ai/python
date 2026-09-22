@@ -79,6 +79,7 @@ pipeline {
                 sh """
                     kubectl apply -f k8s/deployment.yaml -n ${NAMESPACE}
                     kubectl apply -f k8s/service.yaml -n ${NAMESPACE}
+                    kubectl apply -f k8s/service-nodeport.yaml -n ${NAMESPACE}
                 """
             }
         }

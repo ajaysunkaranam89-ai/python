@@ -23,6 +23,7 @@ kubectl apply -f k8s/secret.yaml
 kubectl apply -f k8s/pvc.yaml
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/service-nodeport.yaml
 kubectl apply -f k8s/ingress.yaml
 ```
 
@@ -34,7 +35,21 @@ kubectl get pvc -n python-app
 kubectl get ingress -n python-app
 ```
 
-## 5. Test without Ingress
+## 5. Access the app
+
+**Option A — NodePort (no Ingress/hosts-file setup needed)**
+
+```powershell
+kubectl get nodes -o wide
+```
+
+Open, using any node's IP:
+
+http://<node-ip>:30500
+
+(On Kind/Minikube, use `minikube ip` or `kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}'` for `<node-ip>`.)
+
+**Option B — port-forward**
 
 ```powershell
 kubectl port-forward svc/python-app-service 8080:80 -n python-app
@@ -44,7 +59,11 @@ Open:
 
 http://localhost:8080
 
-Health:
+**Option C — Ingress**
+
+Add `python.local` to your hosts file pointing at the ingress controller's IP, then open http://python.local
+
+Health (any option above, path `/health`):
 
 http://localhost:8080/health
 
