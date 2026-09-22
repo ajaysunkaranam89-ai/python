@@ -1,4 +1,3 @@
-```groovy
 pipeline {
     agent any
 
@@ -21,7 +20,6 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "Building Docker image..."
-
                 bat """
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 """
@@ -31,7 +29,6 @@ pipeline {
         stage('Load Image into Kind') {
             steps {
                 echo "Loading Docker image into Kind cluster..."
-
                 bat """
                     kind load docker-image ${IMAGE_NAME}:${IMAGE_TAG}
                 """
@@ -41,7 +38,6 @@ pipeline {
         stage('Deploy Namespace') {
             steps {
                 echo "Creating/updating Kubernetes namespace..."
-
                 bat """
                     kubectl apply -f k8s/namespace.yaml
                 """
@@ -51,7 +47,6 @@ pipeline {
         stage('Deploy ConfigMap') {
             steps {
                 echo "Deploying ConfigMap..."
-
                 bat """
                     kubectl apply -f k8s/configmap.yaml -n ${NAMESPACE}
                 """
@@ -61,7 +56,6 @@ pipeline {
         stage('Deploy Secret') {
             steps {
                 echo "Deploying Secret..."
-
                 bat """
                     kubectl apply -f k8s/secret.yaml -n ${NAMESPACE}
                 """
@@ -71,7 +65,6 @@ pipeline {
         stage('Deploy PVC') {
             steps {
                 echo "Deploying PVC..."
-
                 bat """
                     kubectl apply -f k8s/pvc.yaml -n ${NAMESPACE}
                 """
@@ -81,7 +74,6 @@ pipeline {
         stage('Deploy Application') {
             steps {
                 echo "Deploying Python application..."
-
                 bat """
                     kubectl apply -f k8s/deployment.yaml -n ${NAMESPACE}
                     kubectl apply -f k8s/service.yaml -n ${NAMESPACE}
@@ -92,7 +84,6 @@ pipeline {
         stage('Deploy Ingress') {
             steps {
                 echo "Deploying Ingress..."
-
                 bat """
                     kubectl apply -f k8s/ingress.yaml -n ${NAMESPACE}
                 """
@@ -102,7 +93,6 @@ pipeline {
         stage('Update Image') {
             steps {
                 echo "Updating deployment image..."
-
                 bat """
                     kubectl set image deployment/${APP_NAME} ${APP_NAME}=${IMAGE_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
                 """
@@ -112,7 +102,6 @@ pipeline {
         stage('Wait for Rollout') {
             steps {
                 echo "Waiting for Kubernetes rollout..."
-
                 bat """
                     kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE} --timeout=180s
                 """
@@ -122,7 +111,6 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 echo "Checking Kubernetes resources..."
-
                 bat """
                     kubectl get pods -n ${NAMESPACE}
                     kubectl get deployment -n ${NAMESPACE}
@@ -142,7 +130,6 @@ pipeline {
             echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
             echo "======================================"
         }
-
         failure {
             echo "======================================"
             echo "Deployment FAILED"
@@ -151,4 +138,3 @@ pipeline {
         }
     }
 }
-```
