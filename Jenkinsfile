@@ -6,6 +6,8 @@ pipeline {
         NAMESPACE       = "python-app"
         IMAGE_NAME      = "python-k8s-app"
         IMAGE_TAG       = "${BUILD_NUMBER}"
+        REGISTRY_PUSH   = "registry.registry.svc.cluster.local:5000"
+        REGISTRY_PULL   = "localhost:30600"
     }
 
     stages {
@@ -21,16 +23,16 @@ pipeline {
             steps {
                 echo "Building Docker image..."
                 sh """
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    docker build -t ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG} .
                 """
             }
         }
 
-        stage('Load Image into Kind') {
+        stage('Push Image to Registry') {
             steps {
-                echo "Loading Docker image into Kind cluster..."
+                echo "Pushing Docker image to in-cluster registry..."
                 sh """
-                    kind load docker-image ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
                 """
             }
         }
@@ -94,7 +96,7 @@ pipeline {
             steps {
                 echo "Updating deployment image..."
                 sh """
-                    kubectl set image deployment/${APP_NAME} ${APP_NAME}=${IMAGE_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
+                    kubectl set image deployment/${APP_NAME} ${APP_NAME}=${REGISTRY_PULL}/${IMAGE_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
                 """
             }
         }
