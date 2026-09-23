@@ -43,7 +43,7 @@ pipeline {
                 sh """
                     sed -i "s#image: .*#image: ${REGISTRY_PULL}/${IMAGE_NAME}:${IMAGE_TAG}#" k8s/deployment.yaml
                 """
-                withCredentials([usernamePassword(credentialsId: 'docker_auth', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                withCredentials([usernamePassword(credentialsId: 'git', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                     sh """
                         git config user.email "jenkins@ci.local"
                         git config user.name "Jenkins CI"
