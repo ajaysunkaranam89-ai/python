@@ -37,89 +37,22 @@ pipeline {
             }
         }
 
-        stage('Deploy Namespace') {
+        stage('Update Manifest & Push') {
             steps {
-                echo "Creating/updating Kubernetes namespace..."
+                echo "Updating deployment manifest with new image tag..."
                 sh """
-                    kubectl apply -f k8s/namespace.yaml
+                    sed -i "s#image: .*#image: ${REGISTRY_PULL}/${IMAGE_NAME}:${IMAGE_TAG}#" k8s/deployment.yaml
                 """
-            }
-        }
-
-        stage('Deploy ConfigMap') {
-            steps {
-                echo "Deploying ConfigMap..."
-                sh """
-                    kubectl apply -f k8s/configmap.yaml -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Deploy Secret') {
-            steps {
-                echo "Deploying Secret..."
-                sh """
-                    kubectl apply -f k8s/secret.yaml -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Deploy PVC') {
-            steps {
-                echo "Deploying PVC..."
-                sh """
-                    kubectl apply -f k8s/pvc.yaml -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Deploy Application') {
-            steps {
-                echo "Deploying Python application..."
-                sh """
-                    kubectl apply -f k8s/deployment.yaml -n ${NAMESPACE}
-                    kubectl apply -f k8s/service.yaml -n ${NAMESPACE}
-                    kubectl apply -f k8s/service-nodeport.yaml -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Deploy Ingress') {
-            steps {
-                echo "Deploying Ingress..."
-                sh """
-                    kubectl apply -f k8s/ingress.yaml -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Update Image') {
-            steps {
-                echo "Updating deployment image..."
-                sh """
-                    kubectl set image deployment/${APP_NAME} ${APP_NAME}=${REGISTRY_PULL}/${IMAGE_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
-                """
-            }
-        }
-
-        stage('Wait for Rollout') {
-            steps {
-                echo "Waiting for Kubernetes rollout..."
-                sh """
-                    kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE} --timeout=180s
-                """
-            }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                echo "Checking Kubernetes resources..."
-                sh """
-                    kubectl get pods -n ${NAMESPACE}
-                    kubectl get deployment -n ${NAMESPACE}
-                    kubectl get service -n ${NAMESPACE}
-                    kubectl get ingress -n ${NAMESPACE}
-                """
+                withCredentials([usernamePassword(credentialsId: 'docker_auth', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                    sh """
+                        git config user.email "jenkins@ci.local"
+                        git config user.name "Jenkins CI"
+                        git add k8s/deployment.yaml
+                        git commit -m "ci: update python-app image to ${IMAGE_TAG}" || echo "No changes to commit"
+                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/ajaysunkaranam89-ai/python.git HEAD:main
+                    """
+                }
+                echo "Argo CD will detect this commit and sync it to the cluster automatically."
             }
         }
     }
