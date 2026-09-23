@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: python-app
-          image: localhost:30600/python-k8s-app:28
+          image: localhost:30600/python-k8s-app:29
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
