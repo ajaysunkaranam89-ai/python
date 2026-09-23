@@ -49,7 +49,8 @@ pipeline {
                         git config user.name "Jenkins CI"
                         git add k8s/deployment.yaml
                         git commit -m "ci: update python-app image to ${IMAGE_TAG}" || echo "No changes to commit"
-                        git push https://\${GIT_USER}:\${GIT_TOKEN}@github.com/ajaysunkaranam89-ai/python.git HEAD:main
+                        GIT_USER_ENC=\$(printf '%s' "\${GIT_USER}" | sed 's/@/%40/g')
+                        git push "https://\${GIT_USER_ENC}:\${GIT_TOKEN}@github.com/ajaysunkaranam89-ai/python.git" HEAD:main
                     """
                 }
                 echo "Argo CD will detect this commit and sync it to the cluster automatically."
