@@ -35,6 +35,27 @@ pipeline {
             }
         }
 
+        stage('SonarQube Analysis') {
+            // Scanner runs as a throw-away container in the dind daemon; the workspace is copied in with
+            // docker cp (dind can't see /var/jenkins_home). Settings live in sonar-project.properties.
+            // sonar.qualitygate.wait=true fails this stage if the quality gate fails.
+            when { environment name: 'SKIP_CI', value: 'false' }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'Sonarcube', usernameVariable: 'SONAR_USER', passwordVariable: 'SONAR_PASS')]) {
+                    sh '''
+                        export SONAR_TOKEN="$SONAR_PASS"
+                        CID=$(docker create --network host \
+                            -e SONAR_HOST_URL=http://sonarqube.sonarqube.svc.cluster.local:9000 \
+                            -e SONAR_TOKEN \
+                            sonarsource/sonar-scanner-cli -Dsonar.qualitygate.wait=true)
+                        trap 'docker rm -f "$CID" >/dev/null 2>&1' EXIT
+                        docker cp . "$CID":/usr/src
+                        docker start -a "$CID"
+                    '''
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             when { environment name: 'SKIP_CI', value: 'false' }
             steps {
