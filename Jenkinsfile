@@ -66,6 +66,19 @@ pipeline {
             }
         }
 
+        stage('Trivy Image Scan') {
+            // Throw-away Trivy container scans the built image through the dind socket: everything HIGH+ is
+            // reported, the build fails only on fixable CRITICAL findings.
+            when { environment name: 'SKIP_CI', value: 'false' }
+            steps {
+                sh '''
+                    TRIVY="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache aquasec/trivy:latest image --scanners vuln --ignore-unfixed --no-progress"
+                    $TRIVY --severity HIGH,CRITICAL ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
+                    $TRIVY --severity CRITICAL --exit-code 1 --format json --output /dev/null ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
         stage('Push Image to Registry') {
             when { environment name: 'SKIP_CI', value: 'false' }
             steps {
