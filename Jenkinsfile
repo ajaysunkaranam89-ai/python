@@ -29,6 +29,7 @@ pipeline {
                     env.SKIP_CI = msg.contains('[skip ci]') ? 'true' : 'false'
                     if (env.SKIP_CI == 'true') {
                         currentBuild.description = 'Skipped: manifest-update commit'
+                        currentBuild.result = 'NOT_BUILT'
                         echo 'Latest commit was made by Jenkins - nothing to build.'
                     }
                 }
@@ -41,17 +42,20 @@ pipeline {
             // sonar.qualitygate.wait=true fails this stage if the quality gate fails.
             when { environment name: 'SKIP_CI', value: 'false' }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'Sonarcube', usernameVariable: 'SONAR_USER', passwordVariable: 'SONAR_PASS')]) {
-                    sh '''
-                        export SONAR_TOKEN="$SONAR_PASS"
-                        CID=$(docker create --network host \
-                            -e SONAR_HOST_URL=http://sonarqube.sonarqube.svc.cluster.local:9000 \
-                            -e SONAR_TOKEN \
-                            sonarsource/sonar-scanner-cli -Dsonar.qualitygate.wait=true)
-                        trap 'docker rm -f "$CID" >/dev/null 2>&1' EXIT
-                        docker cp . "$CID":/usr/src
-                        docker start -a "$CID"
-                    '''
+                // The scanner's embedded Node.js bridge occasionally stalls on this small, shared host; one retry covers it.
+                retry(2) {
+                    withCredentials([usernamePassword(credentialsId: 'Sonarcube', usernameVariable: 'SONAR_USER', passwordVariable: 'SONAR_PASS')]) {
+                        sh '''
+                            export SONAR_TOKEN="$SONAR_PASS"
+                            CID=$(docker create --network host \
+                                -e SONAR_HOST_URL=http://sonarqube.sonarqube.svc.cluster.local:9000 \
+                                -e SONAR_TOKEN \
+                                sonarsource/sonar-scanner-cli -Dsonar.qualitygate.wait=true)
+                            trap 'docker rm -f "$CID" >/dev/null 2>&1' EXIT
+                            docker cp . "$CID":/usr/src
+                            docker start -a "$CID"
+                        '''
+                    }
                 }
             }
         }
@@ -73,9 +77,39 @@ pipeline {
             steps {
                 sh '''
                     TRIVY="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache aquasec/trivy:latest image --scanners vuln --ignore-unfixed --no-progress"
-                    $TRIVY --severity HIGH,CRITICAL ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
-                    $TRIVY --severity CRITICAL --exit-code 1 --format json --output /dev/null ${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
+                    IMG=${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
+                    $TRIVY --severity HIGH,CRITICAL $IMG
+                    $TRIVY --severity HIGH,CRITICAL --format template --template "@contrib/html.tpl" $IMG > trivy-report.html
+                    $TRIVY --severity CRITICAL --exit-code 1 --format json --output /dev/null $IMG
                 '''
+            }
+            post {
+                always { archiveArtifacts artifacts: 'trivy-report.html', allowEmptyArchive: true }
+            }
+        }
+
+        stage('Publish to DefectDojo') {
+            // Uploads the full Trivy report (all severities, including unfixed) so DefectDojo can track findings
+            // over time. Reporting only: a failure here marks the stage UNSTABLE but never blocks the deploy.
+            when { environment name: 'SKIP_CI', value: 'false' }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    withCredentials([usernamePassword(credentialsId: 'defectdojo', usernameVariable: 'DD_USER', passwordVariable: 'DD_API_KEY')]) {
+                        sh '''
+                            IMG=${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+                                aquasec/trivy:latest image --scanners vuln --no-progress --format json $IMG > trivy-report.json
+                            # header read from stdin so the API key never appears in the process list
+                            printf 'Authorization: Token %s' "$DD_API_KEY" | curl -sS --fail-with-body --max-time 180 -H @- \
+                                -F scan_type="Trivy Scan" -F file=@trivy-report.json \
+                                -F product_type_name=Applications -F product_name=${APP_NAME} -F engagement_name=jenkins-ci \
+                                -F auto_create_context=true -F close_old_findings=true -F active=true -F verified=false \
+                                -F build_id=${BUILD_NUMBER} -F commit_hash=$(git rev-parse --short HEAD) \
+                                -o dd-response.json http://defectdojo.defectdojo.svc.cluster.local:8080/api/v2/import-scan/
+                            echo "DefectDojo import accepted: $(grep -o '"test": *[0-9]*' dd-response.json | head -1)"
+                        '''
+                    }
+                }
             }
         }
 
