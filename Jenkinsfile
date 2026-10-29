@@ -64,31 +64,6 @@ pipeline {
             }
         }
 
-        stage('Publish to DefectDojo') {
-            // Uploads the full Trivy report (all severities, including unfixed) so DefectDojo can track findings
-            // over time. Reporting only: a failure here marks the stage UNSTABLE but never blocks the deploy.
-            when { environment name: 'SKIP_CI', value: 'false' }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    withCredentials([usernamePassword(credentialsId: 'defectdojo', usernameVariable: 'DD_USER', passwordVariable: 'DD_API_KEY')]) {
-                        sh '''
-                            IMG=${REGISTRY_PUSH}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
-                                aquasec/trivy:latest image --scanners vuln --no-progress --format json $IMG > trivy-report.json
-                            # header read from stdin so the API key never appears in the process list
-                            printf 'Authorization: Token %s' "$DD_API_KEY" | curl -sS --fail-with-body --max-time 180 -H @- \
-                                -F scan_type="Trivy Scan" -F file=@trivy-report.json \
-                                -F product_type_name=Applications -F product_name=${APP_NAME} -F engagement_name=jenkins-ci \
-                                -F auto_create_context=true -F close_old_findings=true -F active=true -F verified=false \
-                                -F build_id=${BUILD_NUMBER} -F commit_hash=$(git rev-parse --short HEAD) \
-                                -o dd-response.json http://defectdojo.defectdojo.svc.cluster.local:8080/api/v2/import-scan/
-                            echo "DefectDojo import accepted: $(grep -o '"test": *[0-9]*' dd-response.json | head -1)"
-                        '''
-                    }
-                }
-            }
-        }
-
         stage('Push Image to Registry') {
             when { environment name: 'SKIP_CI', value: 'false' }
             steps {
